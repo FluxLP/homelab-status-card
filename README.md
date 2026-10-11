@@ -1,46 +1,22 @@
 # Homelab Status Card
 
-Eine Lovelace-Karte für Home Assistant, die den Status deiner Container/VMs anzeigt (z. B. aus der Proxmox-VE-Integration). Optional prüft sie auch, ob die zugehörige Domain erreichbar ist.
+Eine Lovelace-Karte für Home Assistant, die deine Container und VMs als Kacheln zeigt: Läuft der Container, und ist die zugehörige Domain erreichbar?
+
+**Ab v2 kommen die Daten aus der Integration [Proxmox Homelab Monitor](https://github.com/FluxLP/proxmox-homelab-monitor).** Sie prüft die Domains serverseitig rund um die Uhr und liefert pro Container/VM eine Dienst-Entität (`binary_sensor.<gast>_service`). Die Karte selbst prüft nichts mehr; der `shell_command` aus v1 wird nicht mehr gebraucht.
 
 - **Großer Punkt:** Container läuft (grün) / aus (rot) / nicht verfügbar (grau)
-- **Kleiner Punkt mit Weltkugel:** Domain erreichbar (grün) / nicht erreichbar (rot). Ein Klick darauf öffnet die Domain.
-- **Klick auf die Kachel:** öffnet den More-Info-Dialog der Entität
-- **Visueller Editor:** Dienste anklicken, pro Dienst „Domain überwachen“ aktivieren und Domain eintragen
-- **Suche im Editor:** lange Dienste-Listen nach Name, Entitäts-ID oder Domain filtern (mehrere Suchbegriffe möglich)
-- **Node-Filter im Editor:** Proxmox-Nodes per Schalter ein-/ausblenden, um nur die Container und VMs bestimmter Nodes zu sehen (Zuordnung über die Geräte-Registry der Proxmox-VE-Integration)
+- **Kleiner Punkt mit Weltkugel:** Domain erreichbar (grün) / nicht erreichbar (rot); ein Klick öffnet die Domain. Nur bei Diensten mit Domain.
+- **Zweite Zeile:** „In Betrieb“, „Offline“ oder z. B. „Domain nicht erreichbar (HTTP 502)“ / „(Zeitüberschreitung)“
+- **Klick auf die Kachel:** More-Info-Dialog der Dienst-Entität
+- **Visueller Editor:** Dienste anhaken, Anzeigename und Icon, Reihenfolge, Suche, Node-Filter, Größe (normal/klein/sehr klein)
+
+Die platzsparende Variante mit Banner ist [Homelab Status Compact](https://github.com/FluxLP/homelab-status-compact).
 
 ## Installation
 
-### HACS (benutzerdefiniertes Repository)
-1. HACS → ⋮ → *Benutzerdefinierte Repositories*
-2. URL dieses Repositorys eintragen, Typ **Dashboard**
-3. „Homelab Status Card“ installieren und den Browser neu laden
-
-### Manuell
-1. `homelab-status-card.js` nach `/config/www/` kopieren
-2. *Einstellungen → Dashboards → ⋮ → Ressourcen* → `/local/homelab-status-card.js` als **JavaScript-Modul** hinzufügen
-
-## Serverseitige Domain-Prüfung (empfohlen)
-
-Füge diesen Eintrag in die `configuration.yaml` ein und starte Home Assistant neu:
-
-```yaml
-shell_command:
-  homelab_status_check: >-
-    sh -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 10 --url "$0" || true' {{ url }}
-```
-
-Damit ruft Home Assistant die Domain selbst auf und wertet den HTTP-Statuscode aus:
-
-| Ergebnis | Anzeige |
-|---|---|
-| HTTP 1xx–4xx | erreichbar (auch 401/403, z. B. bei Login-Seiten) |
-| HTTP 5xx (z. B. 502 vom Reverse Proxy) | nicht erreichbar |
-| Timeout, DNS- oder Zertifikatsfehler | nicht erreichbar |
-
-**Ohne diesen Eintrag** prüft der Browser des Betrachters die Domain. Das funktioniert auch, sieht aber nur „erreichbar ja/nein“. Ein 502 vom Reverse Proxy gilt dann als erreichbar.
-
-> Geprüft wird jeweils aus deinem Netz. Löst ein lokaler DNS (z. B. Pi-hole) die Domains intern auf, wird der interne Weg getestet und nicht der Zugriff von außen.
+1. Integration [Proxmox Homelab Monitor](https://github.com/FluxLP/proxmox-homelab-monitor) einrichten und unter *Konfigurieren → Domains der Dienste* die Domains eintragen
+2. HACS → ⋮ → *Benutzerdefinierte Repositories* → URL dieses Repositorys, Typ **Dashboard** → „Homelab Status Card“ installieren
+3. Browser bzw. App neu laden
 
 ## Konfiguration
 
@@ -48,31 +24,28 @@ Damit ruft Home Assistant die Domain selbst auf und wertet den HTTP-Statuscode a
 type: custom:homelab-status-card
 title: Homelab
 columns: 2
-interval: 60
-base_domain: example.org
+size: small
 services:
-  - entity: binary_sensor.lxc_audiobookshelf_101_status
-    name: Audiobookshelf
-    domain_check: true
-    domain: audiobookshelf.example.org
-  - entity: binary_sensor.qemu_win10_1000_status
+  - entity: binary_sensor.lxc_jellyfin_100_service
+    name: Jellyfin
+  - entity: binary_sensor.qemu_win10_1000_service
     name: Windows-VM
+    icon: mdi:microsoft-windows
 ```
 
 | Option | Standard | Beschreibung |
 |---|---|---|
+| `services` | – | Liste der Dienste (Pflicht) |
 | `title` | – | Überschrift über der Karte |
-| `columns` | `2` | Anzahl Spalten (1–6) |
-| `interval` | `60` | Prüfintervall der Domains in Sekunden (min. 15) |
-| `base_domain` | – | Nur für den Editor: Domain-Vorschlag `<dienst>.<base_domain>` |
-| `size` | `normal` | Größe der Kacheln: `normal`, `small` oder `tiny`. In den kleinen Stufen werden lange Namen auf zwei Zeilen umgebrochen statt abgeschnitten |
-| `services[].entity` | – | **Pflicht.** Binärsensor (`on` = läuft) |
-| `services[].name` | Friendly Name | Anzeigename |
-| `services[].icon` | `mdi:circle` | Icon |
-| `services[].domain_check` | `false` | Domain überwachen |
-| `services[].domain` | – | Domain oder vollständige URL (ohne Schema wird `https://` verwendet) |
+| `columns` | `2` | Spalten (1–6) |
+| `size` | `normal` | `normal`, `small` oder `tiny`. In den kleinen Stufen werden lange Namen umgebrochen statt abgeschnitten |
 
-Die Domains werden nur geprüft, solange das Dashboard geöffnet ist.
+Pro Dienst: `entity` (Pflicht), `name`, `icon`.
+
+## Umstieg von v1
+
+v1-Konfigurationen laufen weiter: Steht dort `binary_sensor.lxc_jellyfin_100_status`, nimmt die Karte automatisch `binary_sensor.lxc_jellyfin_100_service`. `domain_check`, `domain`, `interval` und `base_domain` werden ignoriert und beim nächsten Speichern im Editor entfernt. Den `shell_command: homelab_status_check` in der `configuration.yaml` kannst du löschen.
 
 ## Lizenz
+
 MIT
