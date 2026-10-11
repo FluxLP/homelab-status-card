@@ -3,7 +3,7 @@
  * Zeigt den Status von Containern/VMs (z. B. aus der Proxmox-VE-Integration)
  * und optional die Erreichbarkeit der zugehörigen Domain.
  */
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const CHECK_SERVICE = "homelab_status_check";
 
 const I18N = {
@@ -26,6 +26,9 @@ const I18N = {
     domain_check: "Domain überwachen",
     domain: "Domain oder URL",
     no_entities: "Keine passenden Entitäten gefunden.",
+    search: "Dienste durchsuchen …",
+    search_count: "{shown} von {total}",
+    search_none: "Keine Treffer für diese Suche.",
     up: "Nach oben",
     down: "Nach unten",
     browser_mode:
@@ -50,6 +53,9 @@ const I18N = {
     domain_check: "Monitor domain",
     domain: "Domain or URL",
     no_entities: "No matching entities found.",
+    search: "Search services …",
+    search_count: "{shown} of {total}",
+    search_none: "No services match this search.",
     up: "Move up",
     down: "Move down",
     browser_mode:
@@ -332,7 +338,7 @@ const EDITOR_STYLE = `
   :host { display: block; }
   h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 500; }
   label.field { display: block; margin-bottom: 10px; font-size: 12px; color: var(--secondary-text-color); }
-  input[type=text], input[type=number] {
+  input[type=text], input[type=number], input[type=search] {
     display: block; width: 100%; box-sizing: border-box; margin-top: 4px;
     padding: 8px 10px; font-size: 14px; border-radius: 6px;
     border: 1px solid var(--divider-color, #ccc);
@@ -343,6 +349,12 @@ const EDITOR_STYLE = `
   .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary-color); }
   .svc { border: 1px solid var(--divider-color, #ddd); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
   .svc.on { border-color: var(--primary-color); }
+  .svc.hidden { display: none; }
+  .search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .search input { flex: 1; margin-top: 0; }
+  .search .count { font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; }
+  .search-none { display: none; font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px; }
+  .search-none.show { display: block; }
   .svc-head { display: flex; align-items: center; gap: 8px; }
   .svc-head .check { flex: 1; min-width: 0; }
   .svc-head .eid { font-size: 11px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -372,6 +384,7 @@ class HomelabStatusCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._showAll = false;
+    this._query = "";
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
@@ -409,6 +422,11 @@ class HomelabStatusCardEditor extends HTMLElement {
 
   _onInput(ev) {
     const el = ev.target;
+    if (el.dataset.act === "search") {
+      this._query = el.value;
+      this._applySearch();
+      return;
+    }
     const field = el.dataset.field;
     if (!field) return;
     if (el.dataset.entity) {
@@ -425,7 +443,7 @@ class HomelabStatusCardEditor extends HTMLElement {
   _onChange(ev) {
     const el = ev.target;
     const act = el.dataset.act;
-    if (!act) return;
+    if (!act || act === "search") return;
     if (act === "show_all") {
       this._showAll = el.checked;
       this._render();
@@ -464,6 +482,30 @@ class HomelabStatusCardEditor extends HTMLElement {
     [list[i], list[j]] = [list[j], list[i]];
     this._render();
     this._fire();
+  }
+
+  _matches(hay) {
+    const words = this._query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return words.every((w) => hay.includes(w));
+  }
+
+  // Filtert ohne Neu-Rendern, damit der Fokus im Suchfeld bleibt
+  _applySearch() {
+    const root = this.shadowRoot;
+    const rows = [...root.querySelectorAll(".svc")];
+    let shown = 0;
+    for (const row of rows) {
+      const hit = this._matches(row.dataset.search || "");
+      row.classList.toggle("hidden", !hit);
+      if (hit) shown++;
+    }
+    const count = root.querySelector(".search .count");
+    if (count) {
+      count.textContent = this._query.trim()
+        ? t(this._hass, "search_count").replace("{shown}", shown).replace("{total}", rows.length)
+        : "";
+    }
+    root.querySelector(".search-none")?.classList.toggle("show", rows.length > 0 && shown === 0);
   }
 
   _candidates() {
@@ -512,7 +554,9 @@ class HomelabStatusCardEditor extends HTMLElement {
               }
             </div>`
           : "";
-        return `<div class="svc${s ? " on" : ""}">
+        const hay = [fname, id, s?.name, s?.domain].filter(Boolean).join(" ").toLowerCase();
+        const hidden = this._query.trim() && !this._matches(hay) ? " hidden" : "";
+        return `<div class="svc${s ? " on" : ""}${hidden}" data-search="${esc(hay)}">
             <div class="svc-head">
               <label class="check">
                 <input type="checkbox" data-act="toggle" data-entity="${esc(id)}" ${s ? "checked" : ""}>
@@ -559,8 +603,14 @@ class HomelabStatusCardEditor extends HTMLElement {
         <input type="checkbox" data-act="show_all" ${this._showAll ? "checked" : ""}>
         ${t(hass, "show_all")}
       </label>
+      <div class="search">
+        <input type="search" data-act="search" value="${esc(this._query)}" placeholder="${esc(t(hass, "search"))}" autocomplete="off">
+        <span class="count"></span>
+      </div>
+      <div class="search-none">${t(hass, "search_none")}</div>
       ${rows || `<div class="eid">${t(hass, "no_entities")}</div>`}
     `;
+    this._applySearch();
   }
 }
 

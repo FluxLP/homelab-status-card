@@ -6,6 +6,7 @@ Eine Lovelace-Karte für Home Assistant, die den Status deiner Container/VMs anz
 - **Kleiner Punkt mit Weltkugel:** Domain erreichbar (grün) / nicht erreichbar (rot). Ein Klick darauf öffnet die Domain.
 - **Klick auf die Kachel:** öffnet den More-Info-Dialog der Entität
 - **Visueller Editor:** Dienste anklicken, pro Dienst „Domain überwachen“ aktivieren und Domain eintragen
+- **Suche im Editor:** lange Dienste-Listen nach Name, Entitäts-ID oder Domain filtern (mehrere Suchbegriffe möglich)
 
 ## Installation
 
