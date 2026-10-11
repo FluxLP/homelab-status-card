@@ -65,6 +65,7 @@ services:
 | `columns` | `2` | Anzahl Spalten (1–6) |
 | `interval` | `60` | Prüfintervall der Domains in Sekunden (min. 15) |
 | `base_domain` | – | Nur für den Editor: Domain-Vorschlag `<dienst>.<base_domain>` |
+| `size` | `normal` | Größe der Kacheln: `normal`, `small` oder `tiny`. In den kleinen Stufen werden lange Namen auf zwei Zeilen umgebrochen statt abgeschnitten |
 | `services[].entity` | – | **Pflicht.** Binärsensor (`on` = läuft) |
 | `services[].name` | Friendly Name | Anzeigename |
 | `services[].icon` | `mdi:circle` | Icon |

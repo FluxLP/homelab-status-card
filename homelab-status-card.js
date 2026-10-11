@@ -3,7 +3,7 @@
  * Zeigt den Status von Containern/VMs (z. B. aus der Proxmox-VE-Integration)
  * und optional die Erreichbarkeit der zugehörigen Domain.
  */
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const CHECK_SERVICE = "homelab_status_check";
 
 const I18N = {
@@ -18,6 +18,10 @@ const I18N = {
     title: "Titel (optional)",
     columns: "Spalten",
     interval: "Prüfintervall (Sekunden)",
+    size: "Größe",
+    size_normal: "Normal",
+    size_small: "Klein",
+    size_tiny: "Sehr klein",
     base_domain: "Basis-Domain (z. B. example.org)",
     services: "Dienste",
     show_all: "Alle Binärsensoren anzeigen (nicht nur *_status)",
@@ -47,6 +51,10 @@ const I18N = {
     title: "Title (optional)",
     columns: "Columns",
     interval: "Check interval (seconds)",
+    size: "Size",
+    size_normal: "Normal",
+    size_small: "Small",
+    size_tiny: "Extra small",
     base_domain: "Base domain (e.g. example.org)",
     services: "Services",
     show_all: "Show all binary sensors (not only *_status)",
@@ -139,6 +147,12 @@ function requestCheck(hass, url, maxAgeMs) {
 // ---------------------------------------------------------------------------
 // Karte
 // ---------------------------------------------------------------------------
+const SIZES = {
+  normal: "",
+  small: "--hsc-fs1:12px;--hsc-fs2:10.5px;--hsc-shape:28px;--hsc-icon:16px;--hsc-badge:14px;--hsc-pad:8px;--hsc-gap:8px;",
+  tiny: "--hsc-fs1:11px;--hsc-fs2:9.5px;--hsc-shape:22px;--hsc-icon:13px;--hsc-badge:12px;--hsc-pad:6px;--hsc-gap:6px;",
+};
+
 const CARD_STYLE = `
   :host { display: block; }
   .header {
@@ -148,29 +162,34 @@ const CARD_STYLE = `
   }
   .grid { display: grid; gap: var(--grid-card-gap, 8px); }
   ha-card.tile {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px; box-sizing: border-box; height: 100%;
+    display: flex; align-items: center; gap: var(--hsc-gap, 12px);
+    padding: var(--hsc-pad, 12px); box-sizing: border-box; height: 100%;
     cursor: pointer;
   }
   .shape {
     position: relative; flex: none;
-    width: 36px; height: 36px; border-radius: 50%;
+    width: var(--hsc-shape, 36px); height: var(--hsc-shape, 36px); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     background: rgba(var(--c), 0.2);
   }
-  .shape > ha-icon { --mdc-icon-size: 20px; color: rgb(var(--c)); display: flex; }
+  .shape > ha-icon { --mdc-icon-size: var(--hsc-icon, 20px); color: rgb(var(--c)); display: flex; }
   .badge {
     position: absolute; top: -3px; right: -3px;
-    width: 16px; height: 16px; border-radius: 50%;
+    width: var(--hsc-badge, 16px); height: var(--hsc-badge, 16px); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     background: rgb(var(--b));
     box-shadow: 0 0 0 2px var(--ha-card-background, var(--card-background-color, #fff));
   }
-  .badge ha-icon { --mdc-icon-size: 11px; color: #fff; display: flex; }
+  .badge ha-icon { --mdc-icon-size: calc(var(--hsc-badge, 16px) - 5px); color: #fff; display: flex; }
   .text { min-width: 0; flex: 1; }
   .primary, .secondary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .primary { font-weight: 600; font-size: 14px; line-height: 20px; color: var(--primary-text-color); }
-  .secondary { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
+  .primary { font-weight: 600; font-size: var(--hsc-fs1, 14px); line-height: 1.4; color: var(--primary-text-color); }
+  .secondary { font-size: var(--hsc-fs2, 12px); line-height: 1.35; color: var(--secondary-text-color); }
+  /* Kleine Stufen: Namen auf zwei Zeilen umbrechen statt abschneiden */
+  .grid.compact .primary {
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
   .secondary.warn { color: rgb(${COLORS.down}); }
 `;
 
@@ -317,7 +336,7 @@ class HomelabStatusCard extends HTMLElement {
           ${badge}
         </div>
         <div class="text">
-          <div class="primary">${esc(name)}</div>
+          <div class="primary" title="${esc(name)}">${esc(name)}</div>
           <div class="secondary${warn ? " warn" : ""}">${esc(secondary)}</div>
         </div>
       </ha-card>`;
@@ -326,10 +345,11 @@ class HomelabStatusCard extends HTMLElement {
   _render() {
     if (!this._config || !this._hass) return;
     const cols = Math.min(6, Math.max(1, Number(this._config.columns) || 2));
+    const size = SIZES[this._config.size] !== undefined ? this._config.size : "normal";
     this.shadowRoot.innerHTML = `
       <style>${CARD_STYLE}</style>
       ${this._config.title ? `<div class="header">${esc(this._config.title)}</div>` : ""}
-      <div class="grid" style="grid-template-columns: repeat(${cols}, minmax(0, 1fr))">
+      <div class="grid${size === "normal" ? "" : " compact"}" style="grid-template-columns: repeat(${cols}, minmax(0, 1fr));${SIZES[size]}">
         ${this._config.services.map((s) => this._tile(s)).join("")}
       </div>`;
   }
@@ -342,7 +362,7 @@ const EDITOR_STYLE = `
   :host { display: block; }
   h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 500; }
   label.field { display: block; margin-bottom: 10px; font-size: 12px; color: var(--secondary-text-color); }
-  input[type=text], input[type=number], input[type=search] {
+  input[type=text], input[type=number], input[type=search], select {
     display: block; width: 100%; box-sizing: border-box; margin-top: 4px;
     padding: 8px 10px; font-size: 14px; border-radius: 6px;
     border: 1px solid var(--divider-color, #ccc);
@@ -425,7 +445,7 @@ class HomelabStatusCardEditor extends HTMLElement {
   }
 
   _setTop(key, value) {
-    if (value === "" || value === null || Number.isNaN(value)) delete this._config[key];
+    if (value === "" || value === null || Number.isNaN(value) || (key === "size" && value === "normal")) delete this._config[key];
     else this._config[key] = value;
   }
 
@@ -639,6 +659,13 @@ class HomelabStatusCardEditor extends HTMLElement {
           <input type="number" min="15" step="5" data-field="interval" value="${esc(c.interval ?? 60)}">
         </label>
       </div>
+      <label class="field">${t(hass, "size")}
+        <select data-field="size">
+          ${["normal", "small", "tiny"]
+            .map((v) => `<option value="${v}" ${(c.size || "normal") === v ? "selected" : ""}>${t(hass, "size_" + v)}</option>`)
+            .join("")}
+        </select>
+      </label>
       <label class="field">${t(hass, "base_domain")}
         <input type="text" data-field="base_domain" value="${esc(c.base_domain || "")}" placeholder="example.org">
       </label>
