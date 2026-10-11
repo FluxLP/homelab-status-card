@@ -7,6 +7,7 @@ Eine Lovelace-Karte für Home Assistant, die den Status deiner Container/VMs anz
 - **Klick auf die Kachel:** öffnet den More-Info-Dialog der Entität
 - **Visueller Editor:** Dienste anklicken, pro Dienst „Domain überwachen“ aktivieren und Domain eintragen
 - **Suche im Editor:** lange Dienste-Listen nach Name, Entitäts-ID oder Domain filtern (mehrere Suchbegriffe möglich)
+- **Node-Filter im Editor:** Proxmox-Nodes per Schalter ein-/ausblenden, um nur die Container und VMs bestimmter Nodes zu sehen (Zuordnung über die Geräte-Registry der Proxmox-VE-Integration)
 
 ## Installation
 

@@ -3,7 +3,7 @@
  * Zeigt den Status von Containern/VMs (z. B. aus der Proxmox-VE-Integration)
  * und optional die Erreichbarkeit der zugehörigen Domain.
  */
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const CHECK_SERVICE = "homelab_status_check";
 
 const I18N = {
@@ -29,6 +29,8 @@ const I18N = {
     search: "Dienste durchsuchen …",
     search_count: "{shown} von {total}",
     search_none: "Keine Treffer für diese Suche.",
+    nodes: "Nodes:",
+    node_other: "Andere",
     up: "Nach oben",
     down: "Nach unten",
     browser_mode:
@@ -56,6 +58,8 @@ const I18N = {
     search: "Search services …",
     search_count: "{shown} of {total}",
     search_none: "No services match this search.",
+    nodes: "Nodes:",
+    node_other: "Other",
     up: "Move up",
     down: "Move down",
     browser_mode:
@@ -353,6 +357,10 @@ const EDITOR_STYLE = `
   .search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .search input { flex: 1; margin-top: 0; }
   .search .count { font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; }
+  .nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -2px 0 10px; font-size: 12px; color: var(--secondary-text-color); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px 3px 6px; border-radius: 14px; cursor: pointer; border: 1px solid var(--divider-color, #ccc); color: var(--primary-text-color); font-size: 13px; }
+  .chip.on { border-color: var(--primary-color); background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.12); }
+  .chip input { margin: 0; }
   .search-none { display: none; font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px; }
   .search-none.show { display: block; }
   .svc-head { display: flex; align-items: center; gap: 8px; }
@@ -385,6 +393,7 @@ class HomelabStatusCardEditor extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._showAll = false;
     this._query = "";
+    this._hiddenNodes = new Set();
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
@@ -444,6 +453,13 @@ class HomelabStatusCardEditor extends HTMLElement {
     const el = ev.target;
     const act = el.dataset.act;
     if (!act || act === "search") return;
+    if (act === "node") {
+      if (el.checked) this._hiddenNodes.delete(el.dataset.node);
+      else this._hiddenNodes.add(el.dataset.node);
+      el.closest(".chip")?.classList.toggle("on", el.checked);
+      this._applySearch();
+      return;
+    }
     if (act === "show_all") {
       this._showAll = el.checked;
       this._render();
@@ -484,6 +500,17 @@ class HomelabStatusCardEditor extends HTMLElement {
     this._fire();
   }
 
+  // Node über die Geräte-Registry: Container/VM-Gerät -> via_device (Node). Nur für die Proxmox-Integration.
+  _nodeOf(id) {
+    const hass = this._hass;
+    const ent = hass.entities?.[id];
+    if (!ent || ent.platform !== "proxmoxve") return "";
+    const dev = hass.devices?.[ent.device_id];
+    if (!dev) return "";
+    const node = (dev.via_device_id && hass.devices?.[dev.via_device_id]) || dev;
+    return String(node.name_by_user || node.name || "").replace(/^Node\s+/i, "");
+  }
+
   _matches(hay) {
     const words = this._query.toLowerCase().trim().split(/\s+/).filter(Boolean);
     return words.every((w) => hay.includes(w));
@@ -495,17 +522,35 @@ class HomelabStatusCardEditor extends HTMLElement {
     const rows = [...root.querySelectorAll(".svc")];
     let shown = 0;
     for (const row of rows) {
-      const hit = this._matches(row.dataset.search || "");
+      const hit = this._matches(row.dataset.search || "") && !this._hiddenNodes.has(row.dataset.node || "");
       row.classList.toggle("hidden", !hit);
       if (hit) shown++;
     }
     const count = root.querySelector(".search .count");
     if (count) {
-      count.textContent = this._query.trim()
+      count.textContent = this._query.trim() || this._hiddenNodes.size
         ? t(this._hass, "search_count").replace("{shown}", shown).replace("{total}", rows.length)
         : "";
     }
     root.querySelector(".search-none")?.classList.toggle("show", rows.length > 0 && shown === 0);
+  }
+
+  _nodesBar() {
+    const hass = this._hass;
+    const nodes = [...new Set(this._candidates().map((id) => this._nodeOf(id)))].sort((a, b) =>
+      a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)
+    );
+    if (nodes.length < 2 && !this._hiddenNodes.size) return "";
+    const chips = nodes
+      .map((n) => {
+        const on = !this._hiddenNodes.has(n);
+        return `<label class="chip${on ? " on" : ""}">
+            <input type="checkbox" data-act="node" data-node="${esc(n)}" ${on ? "checked" : ""}>
+            ${esc(n || t(hass, "node_other"))}
+          </label>`;
+      })
+      .join("");
+    return `<div class="nodes">${t(hass, "nodes")} ${chips}</div>`;
   }
 
   _candidates() {
@@ -554,9 +599,10 @@ class HomelabStatusCardEditor extends HTMLElement {
               }
             </div>`
           : "";
-        const hay = [fname, id, s?.name, s?.domain].filter(Boolean).join(" ").toLowerCase();
-        const hidden = this._query.trim() && !this._matches(hay) ? " hidden" : "";
-        return `<div class="svc${s ? " on" : ""}${hidden}" data-search="${esc(hay)}">
+        const node = this._nodeOf(id);
+        const hay = [fname, id, s?.name, s?.domain, node].filter(Boolean).join(" ").toLowerCase();
+        const hidden = (this._query.trim() && !this._matches(hay)) || this._hiddenNodes.has(node) ? " hidden" : "";
+        return `<div class="svc${s ? " on" : ""}${hidden}" data-search="${esc(hay)}" data-node="${esc(node)}">
             <div class="svc-head">
               <label class="check">
                 <input type="checkbox" data-act="toggle" data-entity="${esc(id)}" ${s ? "checked" : ""}>
@@ -607,6 +653,7 @@ class HomelabStatusCardEditor extends HTMLElement {
         <input type="search" data-act="search" value="${esc(this._query)}" placeholder="${esc(t(hass, "search"))}" autocomplete="off">
         <span class="count"></span>
       </div>
+      ${this._nodesBar()}
       <div class="search-none">${t(hass, "search_none")}</div>
       ${rows || `<div class="eid">${t(hass, "no_entities")}</div>`}
     `;
